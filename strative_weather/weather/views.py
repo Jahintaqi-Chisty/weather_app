@@ -84,9 +84,11 @@ def get_coolest_districts_weather(request):
     response_data = {"coolest_districts": coolest_districts}
     return Response(response_data)
 def _get_coordinates_by_name(district_name):
-    for district in DISTRICT['districts']:
-        if district['name'] == district_name:
-            return float(district['lat']), float(district['long'])
+    district_dict = {district['name']: (float(district['lat']), float(district['long']))
+                     for district in DISTRICT['districts'] if district['name'] == district_name}
+
+    if district_name in district_dict:
+        return district_dict[district_name]
     raise exceptions.NotFound()
     # return Response("No Location Found" ,status=status.HTTP_404_NOT_FOUND)
 @api_view(['POST'])
@@ -119,11 +121,12 @@ def compare_temperatures(request):
             cache_key="destination_location_data",
             travel_date=travel_date
         )
-
+        recommendation='Recommended' if destination_data["temperature_2pm"] <= friend_data["temperature_2pm"] else "Not Recommended"
         response_data = {
             "friend_location": friend_data,
             "destination_location": destination_data,
-            "date":travel_date
+            "date":travel_date,
+            "travel_recommendation":recommendation
         }
 
         return Response(response_data)
