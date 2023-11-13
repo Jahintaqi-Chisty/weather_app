@@ -1,63 +1,117 @@
-# views.py
+from concurrent.futures import ThreadPoolExecutor
+from django.core.cache import cache
 from django.http import JsonResponse
-from django.views.decorators.http import require_GET
 import requests
-import json
-@require_GET
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .district import DISTRICT
+
+def fetch_data(url, params):
+    response = requests.get(url, params=params)
+    response.raise_for_status()
+    return response.json()
+
+def get_average_temperature(data):
+    hourly = data.get('hourly', {})
+    temperature_2m_values = hourly.get('temperature_2m', {})
+    if temperature_2m_values:
+        temperatures_2pm = temperature_2m_values[14:165:24]
+        return sum(temperatures_2pm) / len(temperatures_2pm)
+    return None
+
+def get_weather_data(latitude, longitude,district_name ,cache_key=None):
+    if cache_key:
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return cached_data
+
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "hourly": "temperature_2m"
+    }
+
+    try:
+        response_data = fetch_data(url, params)
+        result = {
+            'district': district_name,
+            'latitude': latitude,
+            'longitude': longitude,
+            'average_temperature_2pm': get_average_temperature(response_data)
+        }
+        if cache_key:
+            cache.set(cache_key, result, timeout=3600)  # Cache for 1 hour
+        return result
+    except requests.RequestException as e:
+        print(f"Error fetching data for {latitude}, {longitude}: {e}")
+        return None
+
+@api_view(['GET'])
 def get_coolest_districts_weather(request):
-    # Fetch district information from the provided JSON file
-    districts_url = 'https://raw.githubusercontent.com/strativ-dev/technical-screening-test/main/bd-districts.json'
-    response = requests.get(districts_url)
+    with ThreadPoolExecutor() as executor:
+        district_weather_list = list(executor.map(get_weather_data, [float(d['lat']) for d in DISTRICT['districts']],
+                                                 [float(d['long']) for d in DISTRICT['districts']],[d['name'] for d in DISTRICT['districts']]))
 
-    if response.status_code == 200:
-        districts_data = response.json().get('districts', [])
+    district_weather_list = [weather for weather in district_weather_list if weather is not None]
 
-        # Prepare a list to store the average temperatures for each district
-        district_temperatures = []
+    coolest_districts = sorted(district_weather_list, key=lambda x: x['average_temperature_2pm'])[:10]
 
-        for district in districts_data:
-            latitude = float(district['lat'])
-            longitude = float(district['long'])
-            
-            url = f"https://api.open-meteo.com/v1/forecast"
-            params = {
-                "latitude": latitude,
-                "longitude": longitude,
-                "hourly": "temperature_2m"
-            }
-            response = requests.get(url, params=params)
-            a = 1
+    response_data = {"coolest_districts": coolest_districts}
+    return Response(response_data)
 
-            # if a==1:
-            print(f"====>{response.status_code}\n")
-            if response.status_code==200:
-                data = response.json()
 
-                # # Process hourly data
-                hourly = data.get('hourly', {})
-                # hourly_json = json.dumps(hourly)
-                # hourly = json.loads('{"time": ["2023-11-12T00:00", "2023-11-12T01:00", "2023-11-12T02:00", "2023-11-12T03:00", "2023-11-12T04:00", "2023-11-12T05:00", "2023-11-12T06:00", "2023-11-12T07:00", "2023-11-12T08:00", "2023-11-12T09:00", "2023-11-12T10:00", "2023-11-12T11:00", "2023-11-12T12:00", "2023-11-12T13:00", "2023-11-12T14:00", "2023-11-12T15:00", "2023-11-12T16:00", "2023-11-12T17:00", "2023-11-12T18:00", "2023-11-12T19:00", "2023-11-12T20:00", "2023-11-12T21:00", "2023-11-12T22:00", "2023-11-12T23:00", "2023-11-13T00:00", "2023-11-13T01:00", "2023-11-13T02:00", "2023-11-13T03:00", "2023-11-13T04:00", "2023-11-13T05:00", "2023-11-13T06:00", "2023-11-13T07:00", "2023-11-13T08:00", "2023-11-13T09:00", "2023-11-13T10:00", "2023-11-13T11:00", "2023-11-13T12:00", "2023-11-13T13:00", "2023-11-13T14:00", "2023-11-13T15:00", "2023-11-13T16:00", "2023-11-13T17:00", "2023-11-13T18:00", "2023-11-13T19:00", "2023-11-13T20:00", "2023-11-13T21:00", "2023-11-13T22:00", "2023-11-13T23:00", "2023-11-14T00:00", "2023-11-14T01:00", "2023-11-14T02:00", "2023-11-14T03:00", "2023-11-14T04:00", "2023-11-14T05:00", "2023-11-14T06:00", "2023-11-14T07:00", "2023-11-14T08:00", "2023-11-14T09:00", "2023-11-14T10:00", "2023-11-14T11:00", "2023-11-14T12:00", "2023-11-14T13:00", "2023-11-14T14:00", "2023-11-14T15:00", "2023-11-14T16:00", "2023-11-14T17:00", "2023-11-14T18:00", "2023-11-14T19:00", "2023-11-14T20:00", "2023-11-14T21:00", "2023-11-14T22:00", "2023-11-14T23:00", "2023-11-15T00:00", "2023-11-15T01:00", "2023-11-15T02:00", "2023-11-15T03:00", "2023-11-15T04:00", "2023-11-15T05:00", "2023-11-15T06:00", "2023-11-15T07:00", "2023-11-15T08:00", "2023-11-15T09:00", "2023-11-15T10:00", "2023-11-15T11:00", "2023-11-15T12:00", "2023-11-15T13:00", "2023-11-15T14:00", "2023-11-15T15:00", "2023-11-15T16:00", "2023-11-15T17:00", "2023-11-15T18:00", "2023-11-15T19:00", "2023-11-15T20:00", "2023-11-15T21:00", "2023-11-15T22:00", "2023-11-15T23:00", "2023-11-16T00:00", "2023-11-16T01:00", "2023-11-16T02:00", "2023-11-16T03:00", "2023-11-16T04:00", "2023-11-16T05:00", "2023-11-16T06:00", "2023-11-16T07:00", "2023-11-16T08:00", "2023-11-16T09:00", "2023-11-16T10:00", "2023-11-16T11:00", "2023-11-16T12:00", "2023-11-16T13:00", "2023-11-16T14:00", "2023-11-16T15:00", "2023-11-16T16:00", "2023-11-16T17:00", "2023-11-16T18:00", "2023-11-16T19:00", "2023-11-16T20:00", "2023-11-16T21:00", "2023-11-16T22:00", "2023-11-16T23:00", "2023-11-17T00:00", "2023-11-17T01:00", "2023-11-17T02:00", "2023-11-17T03:00", "2023-11-17T04:00", "2023-11-17T05:00", "2023-11-17T06:00", "2023-11-17T07:00", "2023-11-17T08:00", "2023-11-17T09:00", "2023-11-17T10:00", "2023-11-17T11:00", "2023-11-17T12:00", "2023-11-17T13:00", "2023-11-17T14:00", "2023-11-17T15:00", "2023-11-17T16:00", "2023-11-17T17:00", "2023-11-17T18:00", "2023-11-17T19:00", "2023-11-17T20:00", "2023-11-17T21:00", "2023-11-17T22:00", "2023-11-17T23:00", "2023-11-18T00:00", "2023-11-18T01:00", "2023-11-18T02:00", "2023-11-18T03:00", "2023-11-18T04:00", "2023-11-18T05:00", "2023-11-18T06:00", "2023-11-18T07:00", "2023-11-18T08:00", "2023-11-18T09:00", "2023-11-18T10:00", "2023-11-18T11:00", "2023-11-18T12:00", "2023-11-18T13:00", "2023-11-18T14:00", "2023-11-18T15:00", "2023-11-18T16:00", "2023-11-18T17:00", "2023-11-18T18:00", "2023-11-18T19:00", "2023-11-18T20:00", "2023-11-18T21:00", "2023-11-18T22:00", "2023-11-18T23:00"], "temperature_2m": [19.8, 20.2, 22.9, 25.7, 27.9, 29.4, 30.4, 31.1, 31.2, 30.9, 30.2, 28.5, 26.4, 25.1, 24.0, 23.3, 22.6, 22.1, 21.6, 20.9, 20.3, 19.8, 19.5, 19.2, 19.0, 19.5, 22.1, 24.9, 27.3, 29.5, 31.0, 31.7, 31.9, 31.7, 31.0, 29.1, 27.1, 25.8, 24.6, 23.8, 23.1, 22.7, 22.2, 21.6, 20.9, 20.5, 20.1, 19.7, 19.4, 19.8, 22.5, 25.4, 27.9, 30.0, 31.3, 32.0, 32.2, 32.1, 31.5, 29.6, 27.0, 25.0, 23.9, 23.9, 23.5, 22.9, 22.2, 21.7, 21.5, 21.4, 21.2, 21.2, 21.3, 21.7, 23.2, 25.0, 26.7, 28.5, 30.3, 31.5, 32.1, 31.9, 31.3, 30.1, 28.7, 27.7, 26.8, 26.0, 25.4, 25.0, 24.6, 24.3, 24.0, 23.7, 23.2, 22.7, 22.5, 22.5, 22.8, 23.3, 24.5, 26.0, 27.0, 27.1, 26.7, 26.2, 25.6, 24.9, 24.3, 24.0, 23.8, 23.6, 23.3, 23.1, 22.9, 22.7, 22.5, 22.3, 22.0, 21.7, 21.8, 22.4, 23.4, 24.5, 25.7, 27.1, 28.1, 28.6, 28.4, 27.9, 27.2, 26.1, 25.3, 24.8, 24.5, 24.2, 23.9, 23.6, 23.4, 23.1, 22.8, 22.6, 22.1, 21.6, 21.7, 22.7, 24.3, 25.8, 27.2, 28.6, 29.6, 30.2, 30.5, 30.3, 29.5, 28.2, 27.1, 26.2, 25.4, 24.8, 24.3, 23.9, 23.5, 23.1, 22.8, 22.4, 22.0, 21.6]}')
-                temperature_2m_values = hourly.get('temperature_2m', {})
 
-                if temperature_2m_values:
-                    # Calculate the average temperature for the next 7 days
-                    temperatures_2pm = hourly['temperature_2m'][14:165:24]  # Extracting temperatures at 2:00 PM for the next 7 days
-                    average_temperature_2pm = sum(temperatures_2pm) / len(temperatures_2pm)
 
-                    # Append district information and average temperature to the list
-                    district_temperatures.append({
-                        'district': district['name'],
-                        'latitude': latitude,
-                        'longitude': longitude,
-                        'average_temperature_2pm': average_temperature_2pm
-                    })
 
-        # Sort the list based on average temperature and get the coolest 10 districts
-        coolest_districts = sorted(district_temperatures, key=lambda x: x['average_temperature_2pm'])[:10]
 
-        response_data = {"coolest_districts": coolest_districts}
+# @require_GET
+# def get_coolest_districts_weather(request):
+#
+#     districts_data = DISTRICT.get('districts', [])
+#
+#     # Prepare a list to store the average temperatures for each district
+#     district_temperatures = []
+#
+#     for district in districts_data:
+#         latitude = float(district['lat'])
+#         longitude = float(district['long'])
+#
+#         url = f"https://api.open-meteo.com/v1/forecast"
+#         params = {
+#             "latitude": latitude,
+#             "longitude": longitude,
+#             "hourly": "temperature_2m"
+#         }
+#         response = requests.get(url, params=params)
+#         a = 1
+#
+#         # if a==1:
+#         print(f"====>{response.status_code}\n")
+#         if response.status_code==200:
+#             data = response.json()
+#
+#             # # Process hourly data
+#             hourly = data.get('hourly', {})
+#             temperature_2m_values = hourly.get('temperature_2m', {})
+#
+#             if temperature_2m_values:
+#                 # Calculate the average temperature for the next 7 days
+#                 temperatures_2pm = hourly['temperature_2m'][14:165:24]  # Extracting temperatures at 2:00 PM for the next 7 days
+#                 average_temperature_2pm = sum(temperatures_2pm) / len(temperatures_2pm)
+#
+#                 # Append district information and average temperature to the list
+#                 district_temperatures.append({
+#                     'district': district['name'],
+#                     'latitude': latitude,
+#                     'longitude': longitude,
+#                     'average_temperature_2pm': average_temperature_2pm
+#                 })
+#
+#     # Sort the list based on average temperature and get the coolest 10 districts
+#     coolest_districts = sorted(district_temperatures, key=lambda x: x['average_temperature_2pm'])[:10]
+#
+#     response_data = {"coolest_districts": coolest_districts}
+#
+#     return JsonResponse(response_data)
 
-        return JsonResponse(response_data)
-
-    else:
-        return JsonResponse({"error": "Failed to fetch district information"}, status=500)

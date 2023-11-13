@@ -1,4 +1,4 @@
-{
+DISTRICT={
     "districts": [
         {
             "id": "1",
